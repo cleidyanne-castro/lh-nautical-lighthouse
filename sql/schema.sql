@@ -1,6 +1,3 @@
--- Schema gerado automaticamente a partir dos CSVs da LH Nautical
--- Banco de destino: PostgreSQL
--- Total de tabelas: 24
 
 CREATE TABLE IF NOT EXISTS "addresses" (
     "id" BIGINT,
