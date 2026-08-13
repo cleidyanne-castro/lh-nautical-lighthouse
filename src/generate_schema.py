@@ -1,21 +1,10 @@
 #!/usr/bin/env python3
-"""
-Questão 2 - LH Nautical Lighthouse
-
-Lê todos os arquivos CSV de um diretório, identifica suas colunas,
-infere tipos básicos compatíveis com PostgreSQL e gera um único schema.sql.
-
-Somente bibliotecas padrão do Python 3 são utilizadas.
-"""
 
 import csv
 import os
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
-
-# Campos que devem permanecer como texto para preservar zeros à esquerda
-# e identificadores que não representam grandezas numéricas.
 TEXT_NAME_HINTS = (
     "name",
     "number",
