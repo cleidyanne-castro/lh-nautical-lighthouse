@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import csv
 import os
 from datetime import datetime
@@ -9,6 +11,38 @@ def is_boolean(value):
 
 
 def is_integer(value):
+TEXT_NAME_HINTS = (
+    "name",
+    "number",
+    "sku",
+    "barcode",
+    "tax_id",
+    "cpf",
+    "cnpj",
+    "phone",
+    "postal_code",
+    "ncm",
+    "series",
+    "access_key",
+    "email",
+    "uri",
+    "slug",
+    "country",
+    "state",
+    "currency",
+)
+
+
+def quote_identifier(name):
+    """Escapa nomes de tabelas/colunas para uso seguro no PostgreSQL."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def looks_like_boolean(value):
+    return value.strip().lower() in {"true", "false"}
+
+
+def looks_like_integer(value):
     try:
         int(value)
         return True
