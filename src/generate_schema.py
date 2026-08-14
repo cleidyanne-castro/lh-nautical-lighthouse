@@ -5,6 +5,12 @@ import os
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 
+
+def is_boolean(value):
+    return value.lower() in {"true", "false"}
+
+
+def is_integer(value):
 TEXT_NAME_HINTS = (
     "name",
     "number",
@@ -44,7 +50,7 @@ def looks_like_integer(value):
         return False
 
 
-def looks_like_numeric(value):
+def is_numeric(value):
     try:
         Decimal(value)
         return True
@@ -52,7 +58,7 @@ def looks_like_numeric(value):
         return False
 
 
-def looks_like_date(value):
+def is_date(value):
     try:
         datetime.strptime(value, "%Y-%m-%d")
         return True
@@ -60,10 +66,7 @@ def looks_like_date(value):
         return False
 
 
-def looks_like_timestamp(value):
-    value = value.strip()
-
-    # Formatos ISO comuns, inclusive com timezone.
+def is_timestamp(value):
     try:
         datetime.fromisoformat(value.replace("Z", "+00:00"))
         return "T" in value or " " in value
@@ -71,117 +74,101 @@ def looks_like_timestamp(value):
         return False
 
 
-def infer_column_type(column_name, values):
-    """
-    Infere um tipo PostgreSQL usando todos os valores não vazios da coluna.
-    A inferência é conservadora: em caso de mistura de formatos, usa TEXT.
-    """
-    non_empty = [
-        value.strip()
-        for value in values
-        if value is not None and value.strip() != ""
-    ]
+def infer_type(values):
+    values = [v.strip() for v in values if v and v.strip()]
 
-    if not non_empty:
+    if not values:
         return "TEXT"
 
-    normalized_name = column_name.lower()
-
-    if any(hint in normalized_name for hint in TEXT_NAME_HINTS):
-        return "TEXT"
-
-    if all(looks_like_boolean(value) for value in non_empty):
+    if all(is_boolean(v) for v in values):
         return "BOOLEAN"
 
-    if all(looks_like_integer(value) for value in non_empty):
+    if all(is_integer(v) for v in values):
         return "BIGINT"
 
-    if all(looks_like_numeric(value) for value in non_empty):
+    if all(is_numeric(v) for v in values):
         return "NUMERIC"
 
-    if all(looks_like_date(value) for value in non_empty):
+    if all(is_date(v) for v in values):
         return "DATE"
 
-    if all(looks_like_timestamp(value) for value in non_empty):
+    if all(is_timestamp(v) for v in values):
         return "TIMESTAMP"
 
     return "TEXT"
 
 
-def inspect_csv(csv_path):
-    """Lê um CSV e retorna suas colunas com os tipos PostgreSQL inferidos."""
-    with open(csv_path, "r", encoding="utf-8-sig", newline="") as file:
+def read_csv_schema(file_path):
+    with open(file_path, "r", encoding="utf-8-sig", newline="") as file:
         reader = csv.DictReader(file)
 
-        if not reader.fieldnames:
-            raise ValueError(f"CSV sem cabeçalho: {csv_path}")
-
-        values_by_column = {
-            column: []
-            for column in reader.fieldnames
+        columns = {
+            name: []
+            for name in reader.fieldnames
         }
 
         for row in reader:
             for column in reader.fieldnames:
-                values_by_column[column].append(row.get(column, ""))
+                columns[column].append(row[column])
 
-    return [
-        (column, infer_column_type(column, values_by_column[column]))
-        for column in reader.fieldnames
-    ]
+    return {
+        column: infer_type(values)
+        for column, values in columns.items()
+    }
 
 
-def build_create_table(table_name, columns):
-    """Monta uma instrução CREATE TABLE para PostgreSQL."""
-    column_definitions = [
-        f"    {quote_identifier(column)} {data_type}"
-        for column, data_type in columns
-    ]
+def create_table_sql(table_name, schema):
+    columns = []
+
+    for column_name, column_type in schema.items():
+        columns.append(
+            f'    "{column_name}" {column_type}'
+        )
 
     return (
-        f"CREATE TABLE IF NOT EXISTS {quote_identifier(table_name)} (\n"
-        + ",\n".join(column_definitions)
+        f'CREATE TABLE "{table_name}" (\n'
+        + ",\n".join(columns)
         + "\n);"
     )
 
 
-def generate_schema(input_directory, output_file):
-    """Processa todos os CSVs do diretório e gera um único schema.sql."""
-    csv_files = sorted(
-        file_name
-        for file_name in os.listdir(input_directory)
-        if file_name.lower().endswith(".csv")
-    )
+def generate_schema(input_folder, output_file):
+    sql_commands = []
 
-    if not csv_files:
-        raise FileNotFoundError(
-            f"Nenhum arquivo CSV encontrado em: {input_directory}"
+    files = sorted(os.listdir(input_folder))
+
+    for file_name in files:
+        if not file_name.endswith(".csv"):
+            continue
+
+        file_path = os.path.join(
+            input_folder,
+            file_name
         )
 
-    statements = [
-        "-- Schema gerado automaticamente a partir dos CSVs da LH Nautical",
-        "-- Banco de destino: PostgreSQL",
-        f"-- Total de tabelas: {len(csv_files)}",
-        "",
-    ]
-
-    for file_name in csv_files:
-        csv_path = os.path.join(input_directory, file_name)
         table_name = os.path.splitext(file_name)[0]
 
-        columns = inspect_csv(csv_path)
-        statements.append(build_create_table(table_name, columns))
-        statements.append("")
+        schema = read_csv_schema(file_path)
+
+        sql_commands.append(
+            create_table_sql(
+                table_name,
+                schema
+            )
+        )
 
     with open(output_file, "w", encoding="utf-8") as file:
-        file.write("\n".join(statements))
+        file.write("\n\n".join(sql_commands))
 
-    print(f"Schema gerado com sucesso: {output_file}")
-    print(f"Tabelas processadas: {len(csv_files)}")
+    print(f"{len(sql_commands)} tabelas processadas.")
+    print(f"Arquivo criado: {output_file}")
 
 
 if __name__ == "__main__":
-    INPUT_DIRECTORY = "lh_nautical_csv"
-    OUTPUT_FILE = "schema.sql"
+    input_folder = "/Users/annecastro/lh-nautical-lighthouse-local/lh_nautical_csv"
+    output_file = "/Users/annecastro/lh-nautical-lighthouse/sql/schema.sql"
 
-    generate_schema(INPUT_DIRECTORY, OUTPUT_FILE)
+    generate_schema(
+        input_folder,
+        output_file
+    )
